@@ -15,6 +15,10 @@ void sensor_reader(void *pvParameters) {
 
       Serial.printf("[SENSOR] Temp: %.2f°C | Humi: %.2f%%\n",
                     data.temperature, data.humidity);
+      
+      // Give semaphores 
+      xSemaphoreGive(ledSemaphore);
+      xSemaphoreGive(neoSemaphore);
 
       if (xQueueSend(sensorQueue, &data, 0) != pdPASS) {
         Serial.println("[SENSOR] Queue full, skipping data...");

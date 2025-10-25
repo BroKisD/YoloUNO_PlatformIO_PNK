@@ -12,13 +12,21 @@
 void setup() {
   Serial.begin(115200);
 
+  ledSemaphore = xSemaphoreCreateBinary();
+  neoSemaphore = xSemaphoreCreateBinary();
+
+  if (ledSemaphore == NULL || neoSemaphore == NULL) {
+    Serial.println("Error creating semaphores!");
+    return;
+  }
+
   xTaskCreate(led_blinky, "Task LED Blink", 4096, NULL, 2, NULL);
   vTaskDelay(pdMS_TO_TICKS(200));  
   
   xTaskCreate(sensor_reader, "Task Temp Reader", 4096, NULL, 1, NULL);
 
 
-  //xTaskCreate( neo_blinky, "Task NEO Blink" ,2048  ,NULL  ,2 , NULL);
+  xTaskCreate( neo_blinky, "Task NEO Blink" ,4096  ,NULL  ,2 , NULL);
   //xTaskCreate( temp_humi_monitor, "Task TEMP HUMI Monitor" ,2048  ,NULL  ,2 , NULL);
   //xTaskCreate( main_server_task, "Task Main Server" ,8192  ,NULL  ,2 , NULL);
   //xTaskCreate( tiny_ml_task, "Tiny ML Task" ,2048  ,NULL  ,2 , NULL);

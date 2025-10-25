@@ -18,6 +18,9 @@ extern DHT20 dht20;
 
 extern QueueHandle_t sensorQueue;
 
+extern SemaphoreHandle_t ledSemaphore;
+extern SemaphoreHandle_t neoSemaphore;
+
 
 extern int glob_var;
 

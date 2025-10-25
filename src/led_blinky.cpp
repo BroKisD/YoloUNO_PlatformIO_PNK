@@ -19,12 +19,14 @@ void led_blinky(void *pvParameters) {
   float temp = 0.0;
 
   while (true) {
-    if (xQueueReceive(sensorQueue, &data, portMAX_DELAY) == pdPASS) {
-      temp = data.temperature;
+    // Wait for semaphore 
+    if (xSemaphoreTake(ledSemaphore, portMAX_DELAY) == pdTRUE) {
+      if (xQueueReceive(sensorQueue, &data, portMAX_DELAY) == pdPASS) {
+        temp = data.temperature;
 
-      int delayTime = 1000
-                    - 100 * std::max(0.0f, std::min(temp - 25.0f, 5.0f))
-                    - 60  * std::max(0.0f, temp - 30.0f);
+        int delayTime = 1000
+                      - 100 * std::max(0.0f, std::min(temp - 25.0f, 5.0f))
+                      - 60  * std::max(0.0f, temp - 30.0f);
 
 
       for (int i = 0; i < 3; i++) {
@@ -34,5 +36,6 @@ void led_blinky(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(delayTime));
       }
     }
+  }
   }
 }
