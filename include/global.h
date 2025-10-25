@@ -4,10 +4,17 @@
 #pragma once
 #include <Arduino.h>
 #include <queue.h>
+#include <DHT20.h>
 
-struct SensorData {
+#define SENSOR_PIN 1
+
+typedef struct {
   float temperature;
-};
+  float humidity;
+} SensorData;
+
+
+extern DHT20 dht20;
 
 extern QueueHandle_t sensorQueue;
 
