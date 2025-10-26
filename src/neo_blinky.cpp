@@ -42,15 +42,15 @@ void neo_blinky(void *pvParameters) {
   while (true) {
     // Wait for semaphore 
     if (xSemaphoreTake(neoSemaphore, portMAX_DELAY) == pdTRUE) {
-      if (xQueueReceive(sensorQueue, &data, portMAX_DELAY) == pdPASS) {
+      // Only process if we're in HUMIDITY_MODE and neoControlEnabled is false
+      if (!neoControlEnabled && xQueueReceive(sensorQueue, &data, portMAX_DELAY) == pdPASS) {
         float humi = data.humidity;
         uint32_t color = humidityToColor(strip, humi);
 
         strip.setPixelColor(0, color);
         strip.show();
+      }
     }
-
     vTaskDelay(pdMS_TO_TICKS(500));
   }
-}
 }
