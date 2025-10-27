@@ -21,17 +21,15 @@ unsigned long connect_start_ms = 0;
 bool connecting = false;
 
 String mainPage() {
-  static SensorData data;
-  float temperature = 0;
-  float humidity = 0;
-  
-  if (xQueuePeek(sensorQueue, &data, 0) == pdPASS) {
-    temperature = data.temperature;
-    humidity = data.humidity;
+  SensorData snapshot = {0.0f, 0.0f};
+  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    snapshot = latestData;
+    xSemaphoreGive(dataMutex);
   }
-  
-  String led1 = led1_state ? "ON" : "OFF";
-  String led2 = led2_state ? "ON" : "OFF";
+
+  float temperature = snapshot.temperature;
+  float humidity = snapshot.humidity;
+
   String neoMode = "";
   switch(currentNeoMode) {
     case HUMIDITY_MODE: neoMode = "Humidity"; break;
@@ -41,154 +39,491 @@ String mainPage() {
 
   return R"rawliteral(
     <!DOCTYPE html><html><head>
+      <meta charset='UTF-8'>
       <meta name='viewport' content='width=device-width, initial-scale=1.0'>
       <title>ESP32 Dashboard</title>
       <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin: 0; background: #f5f5f5; }
-        .container { 
-          margin: 20px auto; 
-          max-width: 400px; 
-          background: #ffffff; 
-          border-radius: 15px; 
-          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-          padding: 25px;
-        }
-        .header {
-          margin-bottom: 25px;
-          color: #2c3e50;
-        }
-        .sensor-data {
-          background: #f8f9fa;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
           padding: 20px;
-          border-radius: 12px;
-          margin: 15px 0;
+          position: relative;
+        }
+        
+        .container { 
+          margin: 0 auto; 
+          max-width: 480px; 
+          animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .card {
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(10px);
+          border-radius: 20px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          padding: 25px;
+          margin-bottom: 20px;
+          transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+        
+        .header {
+          text-align: center;
+          color: white;
+          margin-bottom: 25px;
+        }
+        
+        .header h1 {
+          font-size: 28px;
+          font-weight: 700;
+          text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .sensor-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
           gap: 15px;
+          margin-bottom: 20px;
         }
+        
         .sensor-box {
-          padding: 15px;
-          border-radius: 8px;
-          background: white;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        .sensor-label {
-          color: #666;
-          font-size: 0.9em;
-          margin-bottom: 5px;
-        }
-        .sensor-value {
-          font-size: 1.8em;
-          font-weight: bold;
-          color: #2c3e50;
-        }
-        .neo-control {
-          background: #ffffff;
           padding: 20px;
-          border-radius: 12px;
-          margin: 20px 0;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        .neo-control h3 {
-          color: #2c3e50;
-          margin-bottom: 15px;
-        }
-        .neo-btn {
-          background: #4CAF50;
+          border-radius: 15px;
+          text-align: center;
           color: white;
-          padding: 12px 20px;
-          margin: 8px;
-          border: none;
-          border-radius: 8px;
+          position: relative;
+          overflow: hidden;
+          transition: all 0.3s ease;
+        }
+        
+        .sensor-box.temp-cold {
+          background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        
+        .sensor-box.temp-normal {
+          background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+        
+        .sensor-box.temp-warm {
+          background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+        
+        .sensor-box.temp-hot {
+          background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+        }
+        
+        .sensor-box.hum-dry {
+          background: linear-gradient(135deg, #ffa751 0%, #ffe259 100%);
+        }
+        
+        .sensor-box.hum-normal {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .sensor-box.hum-humid {
+          background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
+        }
+        
+        .sensor-box::before {
+          content: '';
+          position: absolute;
+          top: -50%;
+          left: -50%;
+          width: 200%;
+          height: 200%;
+          background: rgba(255,255,255,0.1);
+          transform: rotate(45deg);
+          transition: 0.5s;
+        }
+        
+        .sensor-box:hover::before {
+          left: 100%;
+        }
+        
+        .sensor-icon {
+          margin-bottom: 10px;
+          position: relative;
+          z-index: 1;
+        }
+        
+        .sensor-icon svg {
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+        }
+        
+        .sensor-label {
+          font-size: 14px;
+          opacity: 0.95;
+          margin-bottom: 5px;
+          position: relative;
+          z-index: 1;
+          font-weight: 500;
+        }
+        
+        .sensor-value {
+          font-size: 32px;
+          font-weight: bold;
+          margin-bottom: 8px;
+          position: relative;
+          z-index: 1;
+        }
+        
+        .sensor-status {
+          font-size: 12px;
+          padding: 4px 12px;
+          background: rgba(255,255,255,0.3);
+          border-radius: 12px;
+          display: inline-block;
+          position: relative;
+          z-index: 1;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+        }
+        
+        .history-card {
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(10px);
+          border-radius: 20px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          padding: 20px;
+          margin-bottom: 20px;
+        }
+        
+        .history-title {
+          font-size: 18px;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 15px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .history-list {
+          max-height: 200px;
+          overflow-y: auto;
+        }
+        
+        .history-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px;
+          background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+          border-radius: 10px;
+          margin-bottom: 8px;
+          font-size: 14px;
+          transition: 0.2s;
+          border-left: 4px solid #667eea;
+        }
+        
+        .history-item:hover {
+          transform: translateX(5px);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .history-time {
+          color: #666;
+          font-size: 12px;
+          min-width: 70px;
+          font-weight: 500;
+        }
+        
+        .history-values {
+          display: flex;
+          gap: 15px;
+          font-weight: 600;
+          color: #333;
+        }
+        
+        .neo-control {
+          text-align: center;
+        }
+        
+        .neo-title {
+          font-size: 20px;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 10px;
+        }
+        
+        .neo-status {
+          display: inline-block;
+          padding: 8px 20px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          border-radius: 20px;
+          font-size: 14px;
+          margin-bottom: 20px;
+          animation: pulse 2s infinite;
+          font-weight: 500;
+        }
+        
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.8; }
+        }
+        
+        .neo-buttons {
+          display: grid;
+          gap: 12px;
+        }
+        
+        .neo-btn {
+          background: white;
+          color: #333;
+          padding: 15px 20px;
+          border: 2px solid #e0e0e0;
+          border-radius: 12px;
           cursor: pointer;
           transition: all 0.3s ease;
           font-size: 16px;
-          width: calc(100% - 16px);
-          max-width: 200px;
-        }
-        .neo-btn:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        .neo-btn.active {
-          background: #2196F3;
-          transform: translateY(1px);
-        }
-        .status {
           font-weight: 500;
-          color: #666;
-          margin: 15px 0;
-          padding: 10px;
-          background: #f8f9fa;
-          border-radius: 6px;
-          display: inline-block;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
         }
-        #settings {
-          position: absolute;
+        
+        .neo-btn:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+          border-color: #667eea;
+        }
+        
+        .neo-btn.active {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          border-color: transparent;
+          transform: scale(1.05);
+          box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .settings-btn {
+          position: fixed;
           top: 20px;
           right: 20px;
-          background: #007bff;
-          color: white;
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(10px);
           border: none;
           border-radius: 50%;
-          width: 40px;
-          height: 40px;
-          font-size: 20px;
+          width: 50px;
+          height: 50px;
           cursor: pointer;
-          transition: 0.3s;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+          transition: all 0.3s ease;
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
-        #settings:hover {
-          background: #0056b3;
+        
+        .settings-btn svg {
+          width: 24px;
+          height: 24px;
+          stroke: #667eea;
+          transition: transform 0.3s ease;
+        }
+        
+        .settings-btn:hover {
+          box-shadow: 0 6px 25px rgba(0,0,0,0.3);
+          transform: scale(1.1);
+        }
+        
+        .settings-btn:hover svg {
           transform: rotate(90deg);
+        }
+        
+        /* Responsive */
+        @media (max-width: 480px) {
+          body { padding: 15px; }
+          .header h1 { font-size: 24px; }
+          .sensor-value { font-size: 28px; }
+          .card { padding: 20px; }
+          .settings-btn {
+            width: 45px;
+            height: 45px;
+          }
+          .settings-btn svg {
+            width: 20px;
+            height: 20px;
+          }
+        }
+        
+        /* Scrollbar */
+        .history-list::-webkit-scrollbar {
+          width: 6px;
+        }
+        
+        .history-list::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 10px;
+        }
+        
+        .history-list::-webkit-scrollbar-thumb {
+          background: #667eea;
+          border-radius: 10px;
         }
       </style>
     </head>
     <body>
+      <button class="settings-btn" onclick="window.location='/settings'">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 1v6m0 6v6m8.66-15l-3 5.2M6.34 17.8l-3 5.2m15.32-5.2l-3-5.2M6.34 6.2l-3-5.2"></path>
+        </svg>
+      </button>
+      
       <div class='container'>
         <div class='header'>
-          <h2>ESP32 Environmental Monitor</h2>
+          <h1>ESP32 Environmental Monitor</h1>
         </div>
 
-        <div class='sensor-data'>
-          <div class='sensor-box'>
-            <div class='sensor-label'>Temperature</div>
-            <div class='sensor-value'>
-              <span id='temp'>)rawliteral" + String(temperature) + R"rawliteral(</span>&deg;C
+        <div class='card'>
+          <div class='sensor-grid'>
+            <div class='sensor-box temp-normal' id='tempBox'>
+              <div class='sensor-icon'>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+                </svg>
+              </div>
+              <div class='sensor-label'>Temperature</div>
+              <div class='sensor-value'><span id='temp'>)rawliteral" + String(temperature, 1) + R"rawliteral(</span>&deg;C</div>
+              <div class='sensor-status' id='tempStatus'>Normal</div>
             </div>
-          </div>
-          <div class='sensor-box'>
-            <div class='sensor-label'>Humidity</div>
-            <div class='sensor-value'>
-              <span id='hum'>)rawliteral" + String(humidity) + R"rawliteral(</span>%
+            <div class='sensor-box hum-normal' id='humBox'>
+              <div class='sensor-icon'>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                </svg>
+              </div>
+              <div class='sensor-label'>Humidity</div>
+              <div class='sensor-value'><span id='hum'>)rawliteral" + String(humidity, 1) + R"rawliteral(</span>%</div>
+              <div class='sensor-status' id='humStatus'>Normal</div>
             </div>
           </div>
         </div>
         
-        <div class='neo-control'>
-          <h3>RGB LED Control</h3>
-          <p class='status'>Active Mode: <span id='neoMode'>)rawliteral" + neoMode + R"rawliteral(</span></p>
-          <div>
+        <div class='history-card'>
+          <div class='history-title'>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="20" x2="12" y2="10"></line>
+              <line x1="18" y1="20" x2="18" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="16"></line>
+            </svg>
+            <span>Recent History (10s)</span>
+          </div>
+          <div class='history-list' id='historyList'>
+            <div style='text-align:center; color:#999; padding:20px;'>Loading...</div>
+          </div>
+        </div>
+        
+        <div class='card neo-control'>
+          <div class='neo-title'>RGB LED Control</div>
+          <div class='neo-status'>
+            Active: <span id='neoMode'>)rawliteral" + neoMode + R"rawliteral(</span>
+          </div>
+          <div class='neo-buttons'>
             <button class='neo-btn' onclick='setNeoMode("humidity")'>
-              <i class="fas fa-tint"></i> Humidity Indicator
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+              </svg>
+              <span>Humidity Indicator</span>
             </button>
             <button class='neo-btn' onclick='setNeoMode("police")'>
-              <i class="fas fa-lightbulb"></i> Police Light
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <span>Police Light</span>
             </button>
             <button class='neo-btn' onclick='setNeoMode("traffic")'>
-              <i class="fas fa-traffic-light"></i> Traffic Signal
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                <circle cx="12" cy="8" r="2"></circle>
+                <circle cx="12" cy="14" r="2"></circle>
+              </svg>
+              <span>Traffic Signal</span>
             </button>
           </div>
         </div>
       </div>
-      <button id="settings" onclick="window.location='/settings'">&#9881;</button>
+      
       <script>
-        function toggleLED(id) {
-          fetch('/toggle?led='+id)
-          .then(response=>response.json())
-          .then(json=>{
-            document.getElementById('l1').innerText=json.led1;
-            document.getElementById('l2').innerText=json.led2;
-          });
+        let history = [];
+        const MAX_HISTORY = 5;
+        
+        function getStatus(temp, hum) {
+          let tempStatus, tempClass, humStatus, humClass;
+          
+          // Temperature status and class
+          if (temp < 15) {
+            tempStatus = 'VERY COLD';
+            tempClass = 'temp-cold';
+          } else if (temp < 20) {
+            tempStatus = 'COLD';
+            tempClass = 'temp-cold';
+          } else if (temp < 26) {
+            tempStatus = 'NORMAL';
+            tempClass = 'temp-normal';
+          } else if (temp < 32) {
+            tempStatus = 'WARM';
+            tempClass = 'temp-warm';
+          } else {
+            tempStatus = 'HOT';
+            tempClass = 'temp-hot';
+          }
+          
+          // Humidity status and class
+          if (hum < 30) {
+            humStatus = 'VERY DRY';
+            humClass = 'hum-dry';
+          } else if (hum < 40) {
+            humStatus = 'DRY';
+            humClass = 'hum-dry';
+          } else if (hum < 60) {
+            humStatus = 'NORMAL';
+            humClass = 'hum-normal';
+          } else if (hum < 70) {
+            humStatus = 'HUMID';
+            humClass = 'hum-humid';
+          } else {
+            humStatus = 'VERY HUMID';
+            humClass = 'hum-humid';
+          }
+          
+          return { tempStatus, tempClass, humStatus, humClass };
+        }
+        
+        function updateHistory(temp, hum) {
+          const now = new Date();
+          const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+          
+          history.unshift({ time: timeStr, temp, hum });
+          if (history.length > MAX_HISTORY) history.pop();
+          
+          const listHTML = history.map(item => `
+            <div class='history-item'>
+              <span class='history-time'>${item.time}</span>
+              <div class='history-values'>
+                <span>T: ${item.temp}&deg;C</span>
+                <span>H: ${item.hum}%</span>
+              </div>
+            </div>
+          `).join('');
+          
+          document.getElementById('historyList').innerHTML = listHTML || '<div style="text-align:center; color:#999;">No data yet</div>';
         }
         
         function setNeoMode(mode) {
@@ -196,25 +531,42 @@ String mainPage() {
           .then(response=>response.json())
           .then(json=>{
             document.getElementById('neoMode').innerText=json.mode;
-            // Update active button state
             document.querySelectorAll('.neo-btn').forEach(btn => {
               btn.classList.remove('active');
-              if(btn.innerText.toLowerCase().includes(json.mode.toLowerCase())) {
-                btn.classList.add('active');
-              }
             });
-          });
+            event.target.closest('.neo-btn').classList.add('active');
+          })
+          .catch(err=>console.log(err));
         }
         
-        // Update sensors and highlight current mode button on load
         function updateUI() {
           fetch('/sensors')
            .then(res=>res.json())
            .then(d=>{
-             document.getElementById('temp').innerText=d.temp;
-             document.getElementById('hum').innerText=d.hum;
-           });
-          
+             const temp = parseFloat(d.temp);
+             const hum = parseFloat(d.hum);
+             
+             document.getElementById('temp').innerText = temp.toFixed(1);
+             document.getElementById('hum').innerText = hum.toFixed(1);
+             
+             const status = getStatus(temp, hum);
+             
+             // Update temperature
+             document.getElementById('tempStatus').innerText = status.tempStatus;
+             const tempBox = document.getElementById('tempBox');
+             tempBox.className = 'sensor-box ' + status.tempClass;
+             
+             // Update humidity
+             document.getElementById('humStatus').innerText = status.humStatus;
+             const humBox = document.getElementById('humBox');
+             humBox.className = 'sensor-box ' + status.humClass;
+             
+             updateHistory(temp.toFixed(1), hum.toFixed(1));
+           })
+           .catch(err=>console.log(err));
+        }
+        
+        function initActiveButton() {
           let currentMode = document.getElementById('neoMode').innerText.toLowerCase();
           document.querySelectorAll('.neo-btn').forEach(btn => {
             if(btn.innerText.toLowerCase().includes(currentMode)) {
@@ -223,7 +575,7 @@ String mainPage() {
           });
         }
         
-        // Initial UI update and start interval
+        initActiveButton();
         updateUI();
         setInterval(updateUI, 3000);
       </script>
@@ -283,28 +635,20 @@ void handleToggle() {
 }
 
 void handleSensors() {
-  static SensorData data;
-  // Wait for the semaphore with a timeout
-  if (xSemaphoreTake(ledSemaphore, pdMS_TO_TICKS(100)) == pdTRUE) {
-    if (xQueuePeek(sensorQueue, &data, 0) == pdPASS) {
-      String json = "{\"temp\":" + String(data.temperature, 1) + 
-                   ",\"hum\":" + String(data.humidity, 1) + "}";
-      server.send(200, "application/json", json);
-    } else {
-      // If queue is empty, send last known values
-      String json = "{\"temp\":" + String(data.temperature, 1) + 
-                   ",\"hum\":" + String(data.humidity, 1) + 
-                   ",\"status\":\"no new data\"}";
-      server.send(200, "application/json", json);
-    }
+  SensorData snapshot = {0.0f, 0.0f};
+
+  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    snapshot = latestData;
+    xSemaphoreGive(dataMutex);
   } else {
-    // If semaphore timeout, send last known values
-    String json = "{\"temp\":" + String(data.temperature, 1) + 
-                 ",\"hum\":" + String(data.humidity, 1) + 
-                 ",\"status\":\"waiting for sensor\"}";
-    server.send(200, "application/json", json);
+    xSemaphoreGive(dataMutex);
   }
+
+  String json = "{\"temp\":" + String(snapshot.temperature, 1) + 
+               ",\"hum\":" + String(snapshot.humidity, 1) + "}";
+  server.send(200, "application/json", json);
 }
+
 
 void handleNeoMode() {
   String mode = server.arg("mode");

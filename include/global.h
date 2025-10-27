@@ -21,6 +21,9 @@ extern QueueHandle_t sensorQueue;
 extern SemaphoreHandle_t ledSemaphore;
 extern SemaphoreHandle_t neoSemaphore;
 
+extern SensorData latestData;        
+extern SemaphoreHandle_t dataMutex; 
+
 
 extern int glob_var;
 
