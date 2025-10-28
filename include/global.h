@@ -24,6 +24,10 @@ extern SemaphoreHandle_t neoSemaphore;
 extern SensorData latestData;        
 extern SemaphoreHandle_t dataMutex; 
 
+extern String currentSeason;
+extern float currentConfidence;
+
+
 
 extern int glob_var;
 

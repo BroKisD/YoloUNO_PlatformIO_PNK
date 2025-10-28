@@ -28,7 +28,7 @@ void setup() {
   xTaskCreate( neo_blinky, "Task NEO Blink" ,4096  ,NULL  ,1 , NULL);
   //xTaskCreate( temp_humi_monitor, "Task TEMP HUMI Monitor" ,2048  ,NULL  ,2 , NULL);
   xTaskCreate(main_server_task, "Task Main Server", 12288, NULL, 1, NULL);
-  //xTaskCreate( tiny_ml_task, "Tiny ML Task" ,2048  ,NULL  ,2 , NULL);
+  xTaskCreate( tiny_ml_task, "Tiny ML Task" ,12288  ,NULL  ,1 , NULL);
 }
 
 void loop() {

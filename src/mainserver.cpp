@@ -247,6 +247,95 @@ String mainPage() {
           color: #333;
         }
         
+        .prediction-card {
+          text-align: center;
+        }
+        
+        .prediction-header {
+          font-size: 20px;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 15px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
+        
+        .season-box {
+          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+          color: white;
+          padding: 25px 20px;
+          border-radius: 15px;
+          margin-bottom: 15px;
+          box-shadow: 0 4px 15px rgba(240, 147, 251, 0.3);
+          position: relative;
+          overflow: hidden;
+        }
+        
+        .season-box::before {
+          content: '';
+          position: absolute;
+          top: -50%;
+          right: -50%;
+          width: 200%;
+          height: 200%;
+          background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+          animation: rotate 10s linear infinite;
+        }
+        
+        @keyframes rotate {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        .season-name {
+          font-size: 36px;
+          font-weight: bold;
+          margin-bottom: 10px;
+          position: relative;
+          z-index: 1;
+          text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .confidence-text {
+          font-size: 14px;
+          opacity: 0.9;
+          margin-bottom: 15px;
+          position: relative;
+          z-index: 1;
+        }
+        
+        .confidence-text span {
+          font-weight: 600;
+          font-size: 16px;
+        }
+        
+        .confidence-bar-container {
+          height: 8px;
+          background: rgba(255,255,255,0.3);
+          border-radius: 4px;
+          overflow: hidden;
+          position: relative;
+          z-index: 1;
+        }
+        
+        .confidence-bar {
+          height: 100%;
+          background: white;
+          width: 0%;
+          transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+          border-radius: 4px;
+          box-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+        
+        .prediction-footer {
+          font-size: 13px;
+          color: #666;
+          margin-top: 10px;
+          font-style: italic;
+        }
+        
         .neo-control {
           text-align: center;
         }
@@ -359,6 +448,9 @@ String mainPage() {
             width: 20px;
             height: 20px;
           }
+          .season-name {
+            font-size: 30px;
+          }
         }
         
         /* Scrollbar */
@@ -426,6 +518,35 @@ String mainPage() {
           </div>
           <div class='history-list' id='historyList'>
             <div style='text-align:center; color:#999; padding:20px;'>Loading...</div>
+          </div>
+        </div>
+        
+        <div class='card prediction-card'>
+          <div class='prediction-header'>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            Season Prediction
+          </div>
+          <div class='season-box'>
+            <div class='season-name' id='seasonName'>Loading...</div>
+            <div class='confidence-text'>
+              Confidence: <span id='confidence'>--%</span>
+            </div>
+            <div class='confidence-bar-container'>
+              <div class='confidence-bar' id='confidenceBar'></div>
+            </div>
+          </div>
+          <div class='prediction-footer'>
+            Based on temperature and humidity patterns
           </div>
         </div>
         
@@ -526,6 +647,25 @@ String mainPage() {
           document.getElementById('historyList').innerHTML = listHTML || '<div style="text-align:center; color:#999;">No data yet</div>';
         }
         
+        function updatePrediction() {
+          fetch('/predict')
+            .then(res => res.json())
+            .then(data => {
+              const season = data.season || 'Unknown';
+              const confidence = (data.confidence * 100).toFixed(1);
+              
+              document.getElementById('seasonName').innerText = season.toUpperCase();
+              document.getElementById('confidence').innerText = confidence + '%';
+              document.getElementById('confidenceBar').style.width = confidence + '%';
+            })
+            .catch(err => {
+              console.log('Prediction error:', err);
+              document.getElementById('seasonName').innerText = 'N/A';
+              document.getElementById('confidence').innerText = '0%';
+              document.getElementById('confidenceBar').style.width = '0%';
+            });
+        }
+        
         function setNeoMode(mode) {
           fetch('/neo?mode='+mode)
           .then(response=>response.json())
@@ -564,6 +704,9 @@ String mainPage() {
              updateHistory(temp.toFixed(1), hum.toFixed(1));
            })
            .catch(err=>console.log(err));
+          
+          // Update prediction
+          updatePrediction();
         }
         
         function initActiveButton() {
@@ -624,6 +767,24 @@ String settingsPage() {
 
 // ========== Handlers ==========
 void handleRoot() { server.send(200, "text/html", mainPage()); }
+
+void handlePredict() {
+  String seasonCopy;
+  float confCopy;
+
+  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    seasonCopy = currentSeason;
+    confCopy = currentConfidence;
+    xSemaphoreGive(dataMutex);
+  } else {
+    seasonCopy = "Unknown";
+    confCopy = 0.0f;
+  }
+
+  String json = "{\"season\":\"" + seasonCopy + "\",\"confidence\":" + String(confCopy/100, 2) + "}";
+  server.send(200, "application/json", json);
+}
+
 
 void handleToggle() {
   int led = server.arg("led").toInt();
@@ -694,6 +855,8 @@ void setupServer() {
   server.on("/settings", HTTP_GET, handleSettings);
   server.on("/connect", HTTP_GET, handleConnect);
   server.on("/neo", HTTP_GET, handleNeoMode);
+  server.on("/predict", HTTP_GET, handlePredict);
+
   server.begin();
 }
 
